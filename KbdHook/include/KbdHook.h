@@ -56,13 +56,15 @@ public:
     // LocaleBase
     virtual void ADDIN_API SetLocale(const WCHAR_T* loc);
 
+    IAddInDefBase* m_iConnect;
+    IMemoryManager* m_iMemory;
+
 private:
     long findName(const wchar_t* names[], const wchar_t* name, const uint32_t size) const;
     void addError(uint32_t wcode, const wchar_t* source,
         const wchar_t* descriptor, long code);
     // Attributes
-    IAddInDefBase* m_iConnect;
-    IMemoryManager* m_iMemory;
+
 };
 
 class WcharWrapper

@@ -1,5 +1,11 @@
 #include "pch.h"
-#include "KbdHook.h"
+#include "../KbdHook/include/KbdHook.h"
+#include "../KbdHook/include/Json.h"
+#include <codecvt>
+#include <string>
+
+using namespace std;
+
 #define TIME_LEN 65
 
 #define BASE_ERRNO     7
@@ -7,6 +13,15 @@
 #ifdef WIN32
 #pragma setlocale("ru-RU" )
 #endif
+
+#pragma region HookRegion
+#define _WIN32_WINNT 0x0400
+#pragma comment( lib, "user32.lib" )
+HHOOK hKeyboardHook = nullptr;
+CAddInNative* m_CaddInNative = nullptr;
+
+#pragma endregion
+
 
 static const wchar_t* g_PropNames[] = {
     L"Epty"
@@ -73,10 +88,12 @@ CAddInNative::CAddInNative()
 {
     m_iMemory = 0;
     m_iConnect = 0;
+    m_CaddInNative = this;
 }
 //---------------------------------------------------------------------------//
 CAddInNative::~CAddInNative()
 {
+    m_CaddInNative = nullptr;
 }
 //---------------------------------------------------------------------------//
 bool CAddInNative::Init(void* pConnection)
@@ -467,3 +484,75 @@ WcharWrapper::~WcharWrapper()
     }
 }
 //---------------------------------------------------------------------------//
+
+
+#pragma region HookRegion
+
+static const wchar_t g_EventSource[] = L"KbdHook";
+static WcharWrapper s_EventSource(g_EventSource);
+
+static const wchar_t g_EventKeyHooked[] = L"KeyHooked";
+static WcharWrapper s_EventNameKeyHooked(g_EventKeyHooked);
+
+LRESULT CALLBACK KeyboardEvent(int nCode, WPARAM wParam, LPARAM lParam)
+{
+    if (m_CaddInNative)
+    {
+        DWORD SHIFT_key = 0;
+        DWORD CTRL_key = 0;
+        DWORD ALT_key = 0;
+
+        if ((nCode == HC_ACTION) && ((wParam == WM_SYSKEYDOWN) || (wParam == WM_KEYDOWN)))
+        {
+            KBDLLHOOKSTRUCT hooked_key = *((KBDLLHOOKSTRUCT*)lParam);
+            DWORD dwMsg = 1;
+            dwMsg += hooked_key.scanCode << 16;
+            dwMsg += hooked_key.flags << 24;
+
+            wchar_t tmp_wch[1024];
+            memset(tmp_wch, 0, 1024);
+            int i = GetKeyNameText(dwMsg, (tmp_wch), 0xFF);
+
+            if (!(wcscmp(tmp_wch, L"Ctrl") == 0 || wcscmp(tmp_wch, L"Shift") == 0 || wcscmp(tmp_wch, L"Alt") == 0))
+            {
+                wchar_t lpszKeyName[1024];
+                memset(lpszKeyName, 0, 1024);
+
+                SHIFT_key = GetAsyncKeyState(VK_SHIFT);
+                ALT_key = GetAsyncKeyState(VK_MENU);
+                CTRL_key = GetAsyncKeyState(VK_CONTROL);
+
+                Json::Value root;
+
+                root["Shift"] = SHIFT_key ? true : false;
+                root["Ctrl"] = CTRL_key ? true : false;
+                root["Alt"] = ALT_key ? true : false;
+
+
+                Json::StreamWriterBuilder builder;
+                string s_res = Json::writeString(builder, root);
+
+                std::wstring_convert<codecvt_utf8_utf16<wchar_t>> converter;
+                std::wstring ws = converter.from_bytes(s_res);
+
+                WCHAR_T* WCHART = nullptr;
+                convToShortWchar(&WCHART, ws.c_str());
+
+                MessageBox(NULL, L"hooked", L"hooked", MB_OK);
+
+                m_CaddInNative->m_iConnect->ExternalEvent(s_EventSource, s_EventNameKeyHooked, WCHART);
+
+                delete[] WCHART;
+
+            }
+
+        }
+
+    }
+    
+    return CallNextHookEx(hKeyboardHook, nCode, wParam, lParam);
+}
+
+
+#pragma endregion
+
