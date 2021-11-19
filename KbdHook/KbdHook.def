@@ -1,0 +1,6 @@
+LIBRARY    "KbdHook"
+
+EXPORTS
+GetClassObject
+DestroyObject
+GetClassNames
