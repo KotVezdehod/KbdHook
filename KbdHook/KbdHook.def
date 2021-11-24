@@ -4,3 +4,4 @@ EXPORTS
 GetClassObject
 DestroyObject
 GetClassNames
+KeyboardEvent

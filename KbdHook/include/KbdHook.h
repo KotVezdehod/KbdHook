@@ -8,6 +8,8 @@
 #include <stdio.h>
 #include <string>
 
+void ToV8String(const wchar_t* wstr, tVariant* par, IMemoryManager* m_iMemory);
+
 ///////////////////////////////////////////////////////////////////////////////
 // class CAddInNative
 class CAddInNative : public IComponentBase

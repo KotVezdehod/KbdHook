@@ -19,7 +19,9 @@ using namespace std;
 #pragma comment( lib, "user32.lib" )
 HHOOK hKeyboardHook = nullptr;
 CAddInNative* m_CaddInNative = nullptr;
-
+typedef  BOOL(WINAPI KEYBOARDEVENT)(UINT);
+KEYBOARDEVENT* KeyboardEventProc = nullptr;
+HINSTANCE mInstance = nullptr;
 #pragma endregion
 
 
@@ -42,6 +44,7 @@ static const wchar_t* g_MethodNamesRu[] = {
 
 static const wchar_t g_kClassNames[] = L"CAddInNative"; //"|OtherClass1|OtherClass2";
 static IAddInDefBase* pAsyncEvent = NULL;
+
 
 uint32_t convToShortWchar(WCHAR_T** Dest, const wchar_t* Source, size_t len = 0);
 uint32_t convFromShortWchar(wchar_t** Dest, const WCHAR_T* Source, uint32_t len = 0);
@@ -89,6 +92,8 @@ CAddInNative::CAddInNative()
     m_iMemory = 0;
     m_iConnect = 0;
     m_CaddInNative = this;
+    mInstance = GetModuleHandle(L"KbdHook");
+    KeyboardEventProc = (KEYBOARDEVENT*)::GetProcAddress(mInstance, "KeyboardEvent");
 }
 //---------------------------------------------------------------------------//
 CAddInNative::~CAddInNative()
@@ -344,12 +349,55 @@ bool CAddInNative::CallAsFunc(const long lMethodNum,
     switch (lMethodNum)
     {
     case eMethSetHook:
+        
+        if (mInstance)
+        {
+            if (!hKeyboardHook)
+            {
+                if (KeyboardEventProc)
+                {
+                    hKeyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, (HOOKPROC)KeyboardEventProc, mInstance, NULL);
+                    if (!hKeyboardHook)
+                    {
+                        int err = GetLastError();
+                        wstring ws_err = L"Перехват установить не удалось: " + to_wstring(err);
+
+                        ToV8String(ws_err.c_str(), pvarRetValue, m_iMemory);
+                    }
+                    else
+                    {
+                        ToV8String(L"ok", pvarRetValue, m_iMemory);
+                    }
+                }
+                else
+                {
+                    ToV8String(L"Не удалось получить точку входа процедуры-перехватчика.", pvarRetValue, m_iMemory);
+                }
+            }
+            else
+            {
+                ToV8String(L"Перехват уже установлен.", pvarRetValue, m_iMemory);
+            }
+        }
+        else
+        {
+            ToV8String(L"Не удалось получить дескриптор динамической библиотеки.", pvarRetValue, m_iMemory);
+        }
         return true;
-
-
 
     case eMethUnsetHook:
 
+        if (hKeyboardHook)
+        {
+            UnhookWindowsHookEx(hKeyboardHook);
+            ToV8String(L"ok", pvarRetValue, m_iMemory);
+        }
+        else
+        {
+            ToV8String(L"Перехват не установлен.", pvarRetValue, m_iMemory);
+        }
+
+        hKeyboardHook = nullptr;
 
         return true;
 
@@ -485,6 +533,19 @@ WcharWrapper::~WcharWrapper()
 }
 //---------------------------------------------------------------------------//
 
+void ToV8String(const wchar_t* wstr, tVariant* par, IMemoryManager* m_iMemory)
+{
+    if (wstr)
+    {
+        ULONG len = wcslen(wstr);
+        m_iMemory->AllocMemory((void**)&par->pwstrVal, (len + 1) * sizeof(WCHAR_T));
+        convToShortWchar(&par->pwstrVal, wstr);
+        par->vt = VTYPE_PWSTR;
+        par->wstrLen = len;
+    }
+    else
+        par->vt = VTYPE_EMPTY;
+}
 
 #pragma region HookRegion
 
@@ -528,17 +589,24 @@ LRESULT CALLBACK KeyboardEvent(int nCode, WPARAM wParam, LPARAM lParam)
                 root["Ctrl"] = CTRL_key ? true : false;
                 root["Alt"] = ALT_key ? true : false;
 
+                wstring ws_key = wstring(tmp_wch);
+                wstring_convert<codecvt_utf8_utf16<wchar_t>> converter;
+                string s_key = converter.to_bytes(ws_key);
+                root["Key"] = s_key.c_str();
+
 
                 Json::StreamWriterBuilder builder;
                 string s_res = Json::writeString(builder, root);
 
-                std::wstring_convert<codecvt_utf8_utf16<wchar_t>> converter;
-                std::wstring ws = converter.from_bytes(s_res);
+                std::wstring_convert<codecvt_utf8_utf16<wchar_t>> conv;
+                std::wstring ws = conv.from_bytes(s_res);
 
                 WCHAR_T* WCHART = nullptr;
                 convToShortWchar(&WCHART, ws.c_str());
 
-                MessageBox(NULL, L"hooked", L"hooked", MB_OK);
+                //MessageBox(NULL, L"hooked", L"hooked", MB_OK);
+
+
 
                 m_CaddInNative->m_iConnect->ExternalEvent(s_EventSource, s_EventNameKeyHooked, WCHART);
 
