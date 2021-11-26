@@ -9,6 +9,10 @@
 #include <string>
 
 void ToV8String(const wchar_t* wstr, tVariant* par, IMemoryManager* m_iMemory);
+long numericValue(tVariant* par);
+bool isNumericParameter(tVariant* par);
+
+int buf_sz = 0;
 
 ///////////////////////////////////////////////////////////////////////////////
 // class CAddInNative
@@ -24,6 +28,7 @@ public:
     {
         eMethSetHook,
         eMethUnsetHook,
+        eMethGetBufferLength,
         eMethLast      // Always last
     };
 

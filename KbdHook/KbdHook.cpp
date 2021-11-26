@@ -3,6 +3,7 @@
 #include "../KbdHook/include/Json.h"
 #include <codecvt>
 #include <string>
+#include <vector>
 
 using namespace std;
 
@@ -30,7 +31,8 @@ static const wchar_t* g_PropNames[] = {
 };
 static const wchar_t* g_MethodNames[] = {
     L"SetHook",
-    L"UnsetHook"
+    L"UnsetHook",
+    L"GetBufferLength"
 };
 
 static const wchar_t* g_PropNamesRu[] = {
@@ -39,7 +41,8 @@ static const wchar_t* g_PropNamesRu[] = {
 
 static const wchar_t* g_MethodNamesRu[] = {
     L"”становитьѕерехват",
-    L"—н€тьѕерехват"
+    L"—н€тьѕерехват",
+    L"–азмерЅуффера"
 };
 
 static const wchar_t g_kClassNames[] = L"CAddInNative"; //"|OtherClass1|OtherClass2";
@@ -92,8 +95,19 @@ CAddInNative::CAddInNative()
     m_iMemory = 0;
     m_iConnect = 0;
     m_CaddInNative = this;
-    mInstance = GetModuleHandle(L"KbdHook");
-    KeyboardEventProc = (KEYBOARDEVENT*)::GetProcAddress(mInstance, "KeyboardEvent");
+
+    wchar_t path[MAX_PATH];
+
+    if (GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)&KeyboardEventProc, &mInstance))
+    {
+        if (mInstance)
+        {
+            KeyboardEventProc = (KEYBOARDEVENT*)::GetProcAddress(mInstance, "KeyboardEvent");
+        }
+    }
+        
+    
 }
 //---------------------------------------------------------------------------//
 CAddInNative::~CAddInNative()
@@ -313,6 +327,14 @@ const WCHAR_T* CAddInNative::GetMethodName(const long lMethodNum, const long lMe
 //---------------------------------------------------------------------------//
 long CAddInNative::GetNParams(const long lMethodNum)
 {
+    switch (lMethodNum)
+    {
+    case eMethSetHook:
+        return 1;
+    default:
+        break;
+    }
+
     return 0;
 }
 //---------------------------------------------------------------------------//
@@ -330,6 +352,8 @@ bool CAddInNative::HasRetVal(const long lMethodNum)
     case eMethSetHook:
     case eMethUnsetHook:
         return true;
+    case eMethGetBufferLength:
+        return true;
     default:
         return false;
     }
@@ -345,7 +369,6 @@ bool CAddInNative::CallAsProc(const long lMethodNum,
 bool CAddInNative::CallAsFunc(const long lMethodNum,
     tVariant* pvarRetValue, tVariant* paParams, const long lSizeArray)
 {
-
     switch (lMethodNum)
     {
     case eMethSetHook:
@@ -356,6 +379,38 @@ bool CAddInNative::CallAsFunc(const long lMethodNum,
             {
                 if (KeyboardEventProc)
                 {
+                    bool err = false;
+
+                    if (lSizeArray)
+                    {
+                        if (isNumericParameter(paParams))
+                        {
+                            double s_loc = numericValue(paParams);
+                            if ((s_loc <= 0) || (s_loc - static_cast<int>(s_loc) != 0))
+                            {
+                                err = true;
+                            }
+                            else
+                            {
+                                buf_sz = static_cast<int>(s_loc);
+                            }
+                        }
+                        else
+                        {
+                            err = true;
+                        }
+                    }
+                    else
+                    {
+                        err = true;
+                    }
+
+                    if (err)
+                    {
+                        ToV8String(L"ѕараметр должен быть - целое положительное число (не ноль)", pvarRetValue, m_iMemory);
+                        return true;
+                    }
+
                     hKeyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, (HOOKPROC)KeyboardEventProc, mInstance, NULL);
                     if (!hKeyboardHook)
                     {
@@ -366,6 +421,7 @@ bool CAddInNative::CallAsFunc(const long lMethodNum,
                     }
                     else
                     {
+
                         ToV8String(L"ok", pvarRetValue, m_iMemory);
                     }
                 }
@@ -399,6 +455,11 @@ bool CAddInNative::CallAsFunc(const long lMethodNum,
 
         hKeyboardHook = nullptr;
 
+        return true;
+
+    case eMethGetBufferLength:
+
+        
         return true;
 
     default:
@@ -547,6 +608,32 @@ void ToV8String(const wchar_t* wstr, tVariant* par, IMemoryManager* m_iMemory)
         par->vt = VTYPE_EMPTY;
 }
 
+long numericValue(tVariant* paParams)
+{
+    long ret = 0;
+    switch (paParams->vt)
+    {
+    case VTYPE_I4:
+        ret = paParams->lVal;
+        break;
+    case VTYPE_UI4:
+        ret = paParams->ulVal;
+        break;
+    case VTYPE_R8:
+        ret = paParams->dblVal;
+        break;
+    case VTYPE_R4:
+        ret = paParams->dblVal;
+        break;
+    }
+    return ret;
+}
+
+bool isNumericParameter(tVariant* par)
+{
+    return par->vt == VTYPE_I4 || par->vt == VTYPE_UI4 || par->vt == VTYPE_R8;
+}
+
 #pragma region HookRegion
 
 static const wchar_t g_EventSource[] = L"KbdHook";
@@ -570,8 +657,8 @@ LRESULT CALLBACK KeyboardEvent(int nCode, WPARAM wParam, LPARAM lParam)
             dwMsg += hooked_key.scanCode << 16;
             dwMsg += hooked_key.flags << 24;
 
-            wchar_t tmp_wch[1024];
-            memset(tmp_wch, 0, 1024);
+            wchar_t tmp_wch[32];
+            memset(tmp_wch, 0, 32);
             int i = GetKeyNameText(dwMsg, (tmp_wch), 0xFF);
 
             if (!(wcscmp(tmp_wch, L"Ctrl") == 0 || wcscmp(tmp_wch, L"Shift") == 0 || wcscmp(tmp_wch, L"Alt") == 0))
@@ -594,23 +681,18 @@ LRESULT CALLBACK KeyboardEvent(int nCode, WPARAM wParam, LPARAM lParam)
                 string s_key = converter.to_bytes(ws_key);
                 root["Key"] = s_key.c_str();
 
-
                 Json::StreamWriterBuilder builder;
                 string s_res = Json::writeString(builder, root);
 
                 std::wstring_convert<codecvt_utf8_utf16<wchar_t>> conv;
-                std::wstring ws = conv.from_bytes(s_res);
 
                 WCHAR_T* WCHART = nullptr;
-                convToShortWchar(&WCHART, ws.c_str());
-
-                //MessageBox(NULL, L"hooked", L"hooked", MB_OK);
-
-
+                convToShortWchar(&WCHART, conv.from_bytes(s_res).c_str());
 
                 m_CaddInNative->m_iConnect->ExternalEvent(s_EventSource, s_EventNameKeyHooked, WCHART);
 
                 delete[] WCHART;
+                WCHART = nullptr;
 
             }
 
@@ -620,7 +702,6 @@ LRESULT CALLBACK KeyboardEvent(int nCode, WPARAM wParam, LPARAM lParam)
     
     return CallNextHookEx(hKeyboardHook, nCode, wParam, lParam);
 }
-
 
 #pragma endregion
 
