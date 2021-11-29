@@ -2,8 +2,10 @@
 #include "../KbdHook/include/KbdHook.h"
 #include "../KbdHook/include/Json.h"
 #include <codecvt>
-#include <string>
 #include <vector>
+#include <iomanip>
+#include <sstream>
+#include <iostream>
 
 using namespace std;
 
@@ -23,6 +25,7 @@ CAddInNative* m_CaddInNative = nullptr;
 typedef  BOOL(WINAPI KEYBOARDEVENT)(UINT);
 KEYBOARDEVENT* KeyboardEventProc = nullptr;
 HINSTANCE mInstance = nullptr;
+bool ScanCode = false;
 #pragma endregion
 
 
@@ -31,8 +34,7 @@ static const wchar_t* g_PropNames[] = {
 };
 static const wchar_t* g_MethodNames[] = {
     L"SetHook",
-    L"UnsetHook",
-    L"GetBufferLength"
+    L"UnsetHook"
 };
 
 static const wchar_t* g_PropNamesRu[] = {
@@ -41,8 +43,7 @@ static const wchar_t* g_PropNamesRu[] = {
 
 static const wchar_t* g_MethodNamesRu[] = {
     L"”становитьѕерехват",
-    L"—н€тьѕерехват",
-    L"–азмерЅуффера"
+    L"—н€тьѕерехват"
 };
 
 static const wchar_t g_kClassNames[] = L"CAddInNative"; //"|OtherClass1|OtherClass2";
@@ -106,7 +107,7 @@ CAddInNative::CAddInNative()
             KeyboardEventProc = (KEYBOARDEVENT*)::GetProcAddress(mInstance, "KeyboardEvent");
         }
     }
-        
+    
     
 }
 //---------------------------------------------------------------------------//
@@ -352,8 +353,6 @@ bool CAddInNative::HasRetVal(const long lMethodNum)
     case eMethSetHook:
     case eMethUnsetHook:
         return true;
-    case eMethGetBufferLength:
-        return true;
     default:
         return false;
     }
@@ -383,17 +382,9 @@ bool CAddInNative::CallAsFunc(const long lMethodNum,
 
                     if (lSizeArray)
                     {
-                        if (isNumericParameter(paParams))
+                        if (TV_VT(paParams) == VTYPE_BOOL)
                         {
-                            double s_loc = numericValue(paParams);
-                            if ((s_loc <= 0) || (s_loc - static_cast<int>(s_loc) != 0))
-                            {
-                                err = true;
-                            }
-                            else
-                            {
-                                buf_sz = static_cast<int>(s_loc);
-                            }
+                            ScanCode = paParams->bVal;
                         }
                         else
                         {
@@ -407,7 +398,7 @@ bool CAddInNative::CallAsFunc(const long lMethodNum,
 
                     if (err)
                     {
-                        ToV8String(L"ѕараметр должен быть - целое положительное число (не ноль)", pvarRetValue, m_iMemory);
+                        ToV8String(L"ѕараметр должен быть - булево значение", pvarRetValue, m_iMemory);
                         return true;
                     }
 
@@ -455,11 +446,6 @@ bool CAddInNative::CallAsFunc(const long lMethodNum,
 
         hKeyboardHook = nullptr;
 
-        return true;
-
-    case eMethGetBufferLength:
-
-        
         return true;
 
     default:
@@ -659,7 +645,7 @@ LRESULT CALLBACK KeyboardEvent(int nCode, WPARAM wParam, LPARAM lParam)
 
             wchar_t tmp_wch[32];
             memset(tmp_wch, 0, 32);
-            int i = GetKeyNameText(dwMsg, (tmp_wch), 0xFF);
+            int i = GetKeyNameText(dwMsg, (tmp_wch), 0x20);
 
             if (!(wcscmp(tmp_wch, L"Ctrl") == 0 || wcscmp(tmp_wch, L"Shift") == 0 || wcscmp(tmp_wch, L"Alt") == 0))
             {
@@ -679,7 +665,34 @@ LRESULT CALLBACK KeyboardEvent(int nCode, WPARAM wParam, LPARAM lParam)
                 wstring ws_key = wstring(tmp_wch);
                 wstring_convert<codecvt_utf8_utf16<wchar_t>> converter;
                 string s_key = converter.to_bytes(ws_key);
-                root["Key"] = s_key.c_str();
+
+                if (ScanCode)
+                {
+                    stringstream stream_str;
+                    stream_str << std::hex << static_cast<int>(dwMsg);
+
+                    stringstream stream1_str;
+                    stream1_str << "0x";
+
+                    int l = 8-stream_str.str().size();
+
+                    if (l > 0)
+                    {
+                        while (l)
+                        {
+                            stream1_str << "0";
+
+                            l--;
+                        }
+                        stream1_str << stream_str.rdbuf();
+                        root["Key"] = stream1_str.str();
+                    }
+                    
+                }
+                else
+                {
+                    root["Key"] = s_key.c_str();
+                }
 
                 Json::StreamWriterBuilder builder;
                 string s_res = Json::writeString(builder, root);

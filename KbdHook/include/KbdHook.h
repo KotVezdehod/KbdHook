@@ -12,8 +12,6 @@ void ToV8String(const wchar_t* wstr, tVariant* par, IMemoryManager* m_iMemory);
 long numericValue(tVariant* par);
 bool isNumericParameter(tVariant* par);
 
-int buf_sz = 0;
-
 ///////////////////////////////////////////////////////////////////////////////
 // class CAddInNative
 class CAddInNative : public IComponentBase
@@ -28,7 +26,6 @@ public:
     {
         eMethSetHook,
         eMethUnsetHook,
-        eMethGetBufferLength,
         eMethLast      // Always last
     };
 
