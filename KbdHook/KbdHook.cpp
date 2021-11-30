@@ -25,7 +25,6 @@ CAddInNative* m_CaddInNative = nullptr;
 typedef  BOOL(WINAPI KEYBOARDEVENT)(UINT);
 KEYBOARDEVENT* KeyboardEventProc = nullptr;
 HINSTANCE mInstance = nullptr;
-bool ScanCode = false;
 #pragma endregion
 
 
@@ -330,8 +329,6 @@ long CAddInNative::GetNParams(const long lMethodNum)
 {
     switch (lMethodNum)
     {
-    case eMethSetHook:
-        return 1;
     default:
         break;
     }
@@ -378,29 +375,6 @@ bool CAddInNative::CallAsFunc(const long lMethodNum,
             {
                 if (KeyboardEventProc)
                 {
-                    bool err = false;
-
-                    if (lSizeArray)
-                    {
-                        if (TV_VT(paParams) == VTYPE_BOOL)
-                        {
-                            ScanCode = paParams->bVal;
-                        }
-                        else
-                        {
-                            err = true;
-                        }
-                    }
-                    else
-                    {
-                        err = true;
-                    }
-
-                    if (err)
-                    {
-                        ToV8String(L"Параметр должен быть - булево значение", pvarRetValue, m_iMemory);
-                        return true;
-                    }
 
                     hKeyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, (HOOKPROC)KeyboardEventProc, mInstance, NULL);
                     if (!hKeyboardHook)
@@ -666,8 +640,8 @@ LRESULT CALLBACK KeyboardEvent(int nCode, WPARAM wParam, LPARAM lParam)
                 wstring_convert<codecvt_utf8_utf16<wchar_t>> converter;
                 string s_key = converter.to_bytes(ws_key);
 
-                if (ScanCode)
-                {
+                /*if (ScanCode)
+                {*/
                     stringstream stream_str;
                     stream_str << std::hex << static_cast<int>(dwMsg);
 
@@ -685,14 +659,14 @@ LRESULT CALLBACK KeyboardEvent(int nCode, WPARAM wParam, LPARAM lParam)
                             l--;
                         }
                         stream1_str << stream_str.rdbuf();
-                        root["Key"] = stream1_str.str();
+                        root["KeyHex"] = stream1_str.str();
                     }
                     
-                }
+                /*}
                 else
-                {
-                    root["Key"] = s_key.c_str();
-                }
+                {*/
+                    root["KeyStr"] = s_key.c_str();
+                //}
 
                 Json::StreamWriterBuilder builder;
                 string s_res = Json::writeString(builder, root);
