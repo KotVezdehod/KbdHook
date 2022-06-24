@@ -8,9 +8,56 @@
 #include <stdio.h>
 #include <string>
 
+#include <codecvt>
+#include <vector>
+#include <iomanip>
+#include <sstream>
+#include <iostream>
+#include <thread>
+
 void ToV8String(const wchar_t* wstr, tVariant* par, IMemoryManager* m_iMemory);
 long numericValue(tVariant* par);
 bool isNumericParameter(tVariant* par);
+int mOpenSymbol = 0;
+int mCloseSymbol = 0;
+int mInterceptorType = -1;
+
+static const wchar_t* g_PropNames[] = {
+    L"Epty"
+};
+static const wchar_t* g_MethodNames[] = {
+    L"SetHook",
+    L"UnsetHook"
+};
+
+static const wchar_t* g_PropNamesRu[] = {
+    L"ѕустой"
+};
+
+static const wchar_t* g_MethodNamesRu[] = {
+    L"”становитьѕерехват",
+    L"—н€тьѕерехват"
+};
+
+class KeyDescription
+{
+
+
+public:
+
+    KeyDescription(int in_vc, int in_sc, std::wstring in_key);
+    ~KeyDescription();
+
+    int Vc;
+    int Sc;
+    std::wstring Key_;
+
+
+private:
+
+
+};
+std::vector<KeyDescription> key_queue;
 
 ///////////////////////////////////////////////////////////////////////////////
 // class CAddInNative
@@ -62,6 +109,7 @@ public:
 
     IAddInDefBase* m_iConnect;
     IMemoryManager* m_iMemory;
+    
 
 private:
     long findName(const wchar_t* names[], const wchar_t* name, const uint32_t size) const;
@@ -84,4 +132,6 @@ private:
 private:
     wchar_t* m_str_wchar;
 };
+
+
 #endif //__ADDINNATIVE_H__

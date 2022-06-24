@@ -1,11 +1,6 @@
 #include "pch.h"
 #include "../KbdHook/include/KbdHook.h"
 #include "../KbdHook/include/Json.h"
-#include <codecvt>
-#include <vector>
-#include <iomanip>
-#include <sstream>
-#include <iostream>
 
 using namespace std;
 
@@ -27,23 +22,6 @@ KEYBOARDEVENT* KeyboardEventProc = nullptr;
 HINSTANCE mInstance = nullptr;
 #pragma endregion
 
-
-static const wchar_t* g_PropNames[] = {
-    L"Epty"
-};
-static const wchar_t* g_MethodNames[] = {
-    L"SetHook",
-    L"UnsetHook"
-};
-
-static const wchar_t* g_PropNamesRu[] = {
-    L"Пустой"
-};
-
-static const wchar_t* g_MethodNamesRu[] = {
-    L"УстановитьПерехват",
-    L"СнятьПерехват"
-};
 
 static const wchar_t g_kClassNames[] = L"CAddInNative"; //"|OtherClass1|OtherClass2";
 static IAddInDefBase* pAsyncEvent = NULL;
@@ -329,6 +307,10 @@ long CAddInNative::GetNParams(const long lMethodNum)
 {
     switch (lMethodNum)
     {
+
+    case eMethSetHook:
+        return 3;
+
     default:
         break;
     }
@@ -366,51 +348,137 @@ bool CAddInNative::CallAsFunc(const long lMethodNum,
     tVariant* pvarRetValue, tVariant* paParams, const long lSizeArray)
 {
     switch (lMethodNum)
-    {
-    case eMethSetHook:
-        
-        if (mInstance)
-        {
-            if (!hKeyboardHook)
-            {
-                if (KeyboardEventProc)
-                {
+	{
+	case eMethSetHook:
+	{
+		
+		if (mInstance)
+		{
+			if (!hKeyboardHook)
+			{
+				if (KeyboardEventProc)
+				{
 
-                    hKeyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, (HOOKPROC)KeyboardEventProc, mInstance, NULL);
-                    if (!hKeyboardHook)
+                    mOpenSymbol = 0;
+                    mCloseSymbol = 0;
+                    mInterceptorType = -1;
+                    key_queue.clear();
+
+                    int loc_open_symbol = 0;
+                    int loc_close_symbol = 0;
+                    int loc_interceptor_type = -1;
+
+                    if (lSizeArray < 3)
                     {
-                        int err = GetLastError();
-                        wstring ws_err = L"Перехват установить не удалось: " + to_wstring(err);
+                        ToV8String(L"Входных параметров должно быть 3 (тип перехватчика ['eachsymbol'|'string'], ОткрывающийКлюч, ЗакрывающийКлюч) ", pvarRetValue, m_iMemory);
+                        return true;
+                    }
 
-                        ToV8String(ws_err.c_str(), pvarRetValue, m_iMemory);
+                    if (TV_VT(&paParams[0]) != VTYPE_PWSTR)
+                    {
+                        ToV8String(L"Параметр 1 должен быть строчным.", pvarRetValue, m_iMemory);
+                        return true;
+                    }
+                    if (!isNumericParameter(&paParams[1]))
+                    {
+                        ToV8String(L"Параметр 2 должен быть целым, не отрицательным числом в диапазоне 1-65535.", pvarRetValue, m_iMemory);
+                        return true;
                     }
                     else
                     {
-
-                        ToV8String(L"ok", pvarRetValue, m_iMemory);
+                        loc_open_symbol = numericValue(&paParams[1]);
+                        if (loc_open_symbol < 1 || loc_open_symbol > 65535)
+                        {
+                            ToV8String(L"Параметр 2 должен быть целым, не отрицательным числом в диапазоне 1-65535.", pvarRetValue, m_iMemory);
+                            return true;
+                        }
                     }
-                }
-                else
-                {
-                    ToV8String(L"Не удалось получить точку входа процедуры-перехватчика.", pvarRetValue, m_iMemory);
-                }
-            }
-            else
-            {
-                ToV8String(L"Перехват уже установлен.", pvarRetValue, m_iMemory);
-            }
-        }
-        else
-        {
-            ToV8String(L"Не удалось получить дескриптор динамической библиотеки.", pvarRetValue, m_iMemory);
-        }
-        return true;
 
-    case eMethUnsetHook:
+                    if (!isNumericParameter(&paParams[2]))
+                    {
+                        ToV8String(L"Параметр 3 должен быть целым, не отрицательным числом в диапазоне 1-65535.", pvarRetValue, m_iMemory);
+                        return true;
+                    }
+                    else
+                    {
+                        loc_close_symbol = numericValue(&paParams[2]);
+                        if (loc_close_symbol < 1 || loc_close_symbol > 65535)
+                        {
+                            ToV8String(L"Параметр 3 должен быть целым, не отрицательным числом в диапазоне 1-65535.", pvarRetValue, m_iMemory);
+                            return true;
+                        }
+                    }
+
+                    wchar_t* wch_interceptor_type = nullptr;
+
+                    convFromShortWchar(&wch_interceptor_type, (&paParams[0])->pwstrVal);
+                    if (!wcscmp(wch_interceptor_type, L"char"))
+                    {
+                        loc_interceptor_type = 0;
+                    }
+                    else if (!wcscmp(wch_interceptor_type, L"string"))
+                    {
+                        loc_interceptor_type = 1;
+                    }
+
+                    delete[] wch_interceptor_type;
+
+                    if (loc_interceptor_type < 0)
+                    {
+                        wstring ws_err = L"Не известный тип перехвата (параметр 1 должен быть 'char' или 'string')";
+                        ToV8String(ws_err.c_str(), pvarRetValue, m_iMemory);
+                        return true;
+                    }
+
+					if (loc_interceptor_type == 1)
+					{
+                        mOpenSymbol = loc_open_symbol;
+                        mCloseSymbol = loc_close_symbol;
+                        mInterceptorType = loc_interceptor_type;
+					}
+					
+
+					hKeyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, (HOOKPROC)KeyboardEventProc, mInstance, NULL);
+
+					if (!hKeyboardHook)
+					{
+						int err = GetLastError();
+						wstring ws_err = L"Перехват установить не удалось: " + to_wstring(err);
+
+						ToV8String(ws_err.c_str(), pvarRetValue, m_iMemory);
+					}
+					else
+					{
+
+						ToV8String(L"ok", pvarRetValue, m_iMemory);
+					}
+				}
+				else
+				{
+					ToV8String(L"Не удалось получить точку входа процедуры-перехватчика.", pvarRetValue, m_iMemory);
+				}
+			}
+			else
+			{
+				ToV8String(L"Перехват уже установлен.", pvarRetValue, m_iMemory);
+			}
+		}
+		else
+		{
+			ToV8String(L"Не удалось получить дескриптор динамической библиотеки.", pvarRetValue, m_iMemory);
+		}
+	}
+	return true;
+
+	case eMethUnsetHook:
 
         if (hKeyboardHook)
         {
             UnhookWindowsHookEx(hKeyboardHook);
+            mOpenSymbol = 0;
+            mCloseSymbol = 0;
+            mInterceptorType = -1;
+            key_queue.clear();
             ToV8String(L"ok", pvarRetValue, m_iMemory);
         }
         else
@@ -606,82 +674,146 @@ LRESULT CALLBACK KeyboardEvent(int nCode, WPARAM wParam, LPARAM lParam)
 {
     if (m_CaddInNative)
     {
-        DWORD SHIFT_key = 0;
-        DWORD CTRL_key = 0;
-        DWORD ALT_key = 0;
+		DWORD SHIFT_key = 0;
+		DWORD CTRL_key = 0;
+		DWORD ALT_key = 0;
 
-        if ((nCode == HC_ACTION) && ((wParam == WM_SYSKEYDOWN) || (wParam == WM_KEYDOWN)))
-        {
-            KBDLLHOOKSTRUCT hooked_key = *((KBDLLHOOKSTRUCT*)lParam);
-            DWORD dwMsg = 1;
-            dwMsg += hooked_key.scanCode << 16;
-            dwMsg += hooked_key.flags << 24;
+		if ((nCode == HC_ACTION) && ((wParam == WM_SYSKEYDOWN) || (wParam == WM_KEYDOWN)))
+		{
+			KBDLLHOOKSTRUCT hooked_key = *((KBDLLHOOKSTRUCT*)lParam);
+			DWORD dwMsg = 1;
+			dwMsg += hooked_key.scanCode << 16;
+			dwMsg += hooked_key.flags << 24;
 
-            wchar_t tmp_wch[32];
-            memset(tmp_wch, 0, 32);
-            int i = GetKeyNameText(dwMsg, (tmp_wch), 0x20);
+			wchar_t tmp_wch[32];
+			memset(&tmp_wch, 0, sizeof(wchar_t)*32);
+			int i = GetKeyNameText(dwMsg, tmp_wch, 0x20);
 
-            if (!(wcscmp(tmp_wch, L"Ctrl") == 0 || wcscmp(tmp_wch, L"Shift") == 0 || wcscmp(tmp_wch, L"Alt") == 0))
-            {
-                wchar_t lpszKeyName[1024];
-                memset(lpszKeyName, 0, 1024);
+			if (!(wcscmp(tmp_wch, L"Ctrl") == 0 || wcscmp(tmp_wch, L"Shift") == 0 || wcscmp(tmp_wch, L"Alt") == 0))
+			{
 
-                SHIFT_key = GetAsyncKeyState(VK_SHIFT);
-                ALT_key = GetAsyncKeyState(VK_MENU);
-                CTRL_key = GetAsyncKeyState(VK_CONTROL);
+				if (mInterceptorType==1)
+				{
+					unsigned char state[256];
+					GetKeyboardState(state);
 
-                Json::Value root;
+					wchar_t unicode[32];
+					memset(unicode, 0, sizeof(wchar_t) * 32);
+					UINT ascii_code = ToUnicodeEx(hooked_key.vkCode, hooked_key.scanCode, state, unicode, 2, 0, GetKeyboardLayout(0));
 
-                root["Shift"] = SHIFT_key ? true : false;
-                root["Ctrl"] = CTRL_key ? true : false;
-                root["Alt"] = ALT_key ? true : false;
+					if (key_queue.size())
+					{
+						if (key_queue[key_queue.size() - 1].Sc != mCloseSymbol)         //parallel thread is active - idle all actions for now...
+						{
+							key_queue.push_back(KeyDescription(hooked_key.vkCode, hooked_key.scanCode, wstring(unicode)));
+							if (hooked_key.scanCode == mCloseSymbol)
+							{
+								//Send to 1c and clear queue
 
-                wstring ws_key = wstring(tmp_wch);
-                wstring_convert<codecvt_utf8_utf16<wchar_t>> converter;
-                string s_key = converter.to_bytes(ws_key);
+								thread t_0([](UINT ascii_code, wstring t0_unicode, KBDLLHOOKSTRUCT t0_hooked_key)
+									{
 
-                /*if (ScanCode)
-                {*/
-                    stringstream stream_str;
-                    stream_str << std::hex << static_cast<int>(dwMsg);
+										wstring_convert<codecvt_utf8_utf16<wchar_t>> converter;
+										Json::Value root;
 
-                    stringstream stream1_str;
-                    stream1_str << "0x";
+										for (KeyDescription& kd : key_queue)
+										{
+											Json::Value KeyDescr;
+											KeyDescr["vk"] = kd.Vc;
+											KeyDescr["sc"] = kd.Sc;
+											KeyDescr["key"] = converter.to_bytes(kd.Key_).c_str();
 
-                    int l = 8-stream_str.str().size();
+											root.append(KeyDescr);
+										}
+										key_queue.clear();
 
-                    if (l > 0)
-                    {
-                        while (l)
-                        {
-                            stream1_str << "0";
+										Json::StreamWriterBuilder builder;
+										string s_res = Json::writeString(builder, root);
 
-                            l--;
-                        }
-                        stream1_str << stream_str.rdbuf();
-                        root["KeyHex"] = stream1_str.str();
-                    }
-                    
-                /*}
-                else
-                {*/
-                    root["KeyStr"] = s_key.c_str();
-                //}
+										WCHAR_T* WCHART = nullptr;
+										convToShortWchar(&WCHART, converter.from_bytes(s_res).c_str());
 
-                Json::StreamWriterBuilder builder;
-                string s_res = Json::writeString(builder, root);
+										m_CaddInNative->m_iConnect->ExternalEvent(s_EventSource, s_EventNameKeyHooked, WCHART);
 
-                std::wstring_convert<codecvt_utf8_utf16<wchar_t>> conv;
+										delete[] WCHART;
+										WCHART = nullptr;
 
-                WCHAR_T* WCHART = nullptr;
-                convToShortWchar(&WCHART, conv.from_bytes(s_res).c_str());
+									}, ascii_code, wstring(unicode), hooked_key);           //в поток передаем объекты, а не указатели. В таком случае компилятор создаст код, 
+                                                                                            //который скопирует эти объекты в стек запускаемого потока (будут созданы новые, независимые экземпляры объектов). 
+                                t_0.detach();
 
-                m_CaddInNative->m_iConnect->ExternalEvent(s_EventSource, s_EventNameKeyHooked, WCHART);
+							}
+						}
+					}
+					else
+					{
+						if (hooked_key.scanCode == mOpenSymbol)
+						{
+							key_queue.push_back(KeyDescription(hooked_key.vkCode, hooked_key.scanCode, wstring(unicode)));
+						}
+					}
 
-                delete[] WCHART;
-                WCHART = nullptr;
+				}
+				else
+				{
+					wchar_t lpszKeyName[1024];
+					memset(lpszKeyName, 0, sizeof(wchar_t)*1024);
 
-            }
+					SHIFT_key = GetAsyncKeyState(VK_SHIFT);
+					ALT_key = GetAsyncKeyState(VK_MENU);
+					CTRL_key = GetAsyncKeyState(VK_CONTROL);
+
+					Json::Value root;
+
+					root["Shift"] = SHIFT_key ? true : false;
+					root["Ctrl"] = CTRL_key ? true : false;
+					root["Alt"] = ALT_key ? true : false;
+
+					wstring ws_key = wstring(tmp_wch);
+					wstring_convert<codecvt_utf8_utf16<wchar_t>> converter;
+					string s_key = converter.to_bytes(ws_key);
+
+
+					stringstream stream_str;
+					stream_str << std::hex << static_cast<int>(dwMsg);
+
+					stringstream stream1_str;
+					stream1_str << "0x";
+
+					size_t l = 8 - stream_str.str().size();
+
+					if (l > 0)
+					{
+						while (l)
+						{
+							stream1_str << "0";
+
+							l--;
+						}
+						stream1_str << stream_str.rdbuf();
+						root["KeyHex"] = stream1_str.str();
+					}
+
+					root["KeyStr"] = s_key.c_str();
+                    root["sc"] = static_cast<int>(hooked_key.scanCode);
+                    root["vc"] = static_cast<int>(hooked_key.vkCode);
+
+					Json::StreamWriterBuilder builder;
+					string s_res = Json::writeString(builder, root);
+
+					std::wstring_convert<codecvt_utf8_utf16<wchar_t>> conv;
+
+					WCHAR_T* WCHART = nullptr;
+					convToShortWchar(&WCHART, conv.from_bytes(s_res).c_str());
+
+					m_CaddInNative->m_iConnect->ExternalEvent(s_EventSource, s_EventNameKeyHooked, WCHART);
+
+					delete[] WCHART;
+					WCHART = nullptr;
+
+				}
+
+			}
 
         }
 
@@ -692,3 +824,11 @@ LRESULT CALLBACK KeyboardEvent(int nCode, WPARAM wParam, LPARAM lParam)
 
 #pragma endregion
 
+KeyDescription::KeyDescription(int in_vc, int in_sc, wstring in_key) : Vc(0), Sc(0)
+{
+    Vc = in_vc; 
+    Sc = in_sc; 
+    Key_ = in_key;
+}
+
+KeyDescription::~KeyDescription() {}
