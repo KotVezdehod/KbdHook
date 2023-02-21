@@ -703,15 +703,29 @@ LRESULT CALLBACK KeyboardEvent(int nCode, WPARAM wParam, LPARAM lParam)
 
 					if (key_queue.size())
 					{
-						if (key_queue[key_queue.size() - 1].Sc != mCloseSymbol)         //parallel thread is active - idle all actions for now...
+						if (key_queue[key_queue.size() - 1].Sc != mCloseSymbol || key_queue.size() == 1)  //parallel thread is active - idle all actions for now...
 						{
 							key_queue.push_back(KeyDescription(hooked_key.vkCode, hooked_key.scanCode, wstring(unicode)));
 							if (hooked_key.scanCode == mCloseSymbol)
 							{
 								//Send to 1c and clear queue
 
+                                ////=========== debug
+                                //WCHAR_T* WCHART_ = nullptr;
+                                //convToShortWchar(&WCHART_, L"fin");
+                                //m_CaddInNative->m_iConnect->ExternalEvent(s_EventSource, s_EventNameKeyHooked, WCHART_);
+                                // delete[] WCHART_;
+                                ////=========== debug
+
 								thread t_0([](UINT ascii_code, wstring t0_unicode, KBDLLHOOKSTRUCT t0_hooked_key)
 									{
+
+                                        ////=========== debug
+                                        //WCHAR_T* WCHART_ = nullptr;
+                                        //convToShortWchar(&WCHART_, L"thread");
+                                        //m_CaddInNative->m_iConnect->ExternalEvent(s_EventSource, s_EventNameKeyHooked, WCHART_);
+                                        //delete[] WCHART_;
+                                        ////=========== debug
 
 										wstring_convert<codecvt_utf8_utf16<wchar_t>> converter;
 										Json::Value root;
@@ -748,7 +762,14 @@ LRESULT CALLBACK KeyboardEvent(int nCode, WPARAM wParam, LPARAM lParam)
 					else
 					{
 						if (hooked_key.scanCode == mOpenSymbol)
-						{
+                        {
+                            //=========== debug
+                            WCHAR_T* WCHART_ = nullptr;
+                            convToShortWchar(&WCHART_, L"start");
+                            m_CaddInNative->m_iConnect->ExternalEvent(s_EventSource, s_EventNameKeyHooked, WCHART_);
+                            delete[] WCHART_;
+                            //=========== debug
+
 							key_queue.push_back(KeyDescription(hooked_key.vkCode, hooked_key.scanCode, wstring(unicode)));
 						}
 					}
